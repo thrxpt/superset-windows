@@ -114,11 +114,13 @@ jobs:
           TARGET_ARCH: x64
         run: bun run compile:app
 
-      - name: Copy native modules + validate runtime
+      - name: Copy native modules
         working-directory: upstream/apps/desktop
-        run: |
-          bun run copy:native-modules
-          bun run validate:native-runtime
+        run: bun run copy:native-modules
+
+      - name: Validate native runtime
+        working-directory: upstream/apps/desktop
+        run: bun run validate:native-runtime
 
       - name: Build Electron app
         working-directory: upstream/apps/desktop

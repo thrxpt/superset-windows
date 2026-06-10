@@ -1,0 +1,48 @@
+diff --git a/apps/desktop/scripts/copy-native-modules.ts b/apps/desktop/scripts/copy-native-modules.ts
+index 3f85977..76de21f 100644
+--- a/apps/desktop/scripts/copy-native-modules.ts
++++ b/apps/desktop/scripts/copy-native-modules.ts
+@@ -22,6 +22,7 @@ import {
+ 	readdirSync,
+ 	readFileSync,
+ 	realpathSync,
++	rmdirSync,
+ 	rmSync,
+ } from "node:fs";
+ import { dirname, join } from "node:path";
+@@ -32,6 +33,17 @@ import { requiredMaterializedNodeModules } from "../runtime-dependencies";
+ // packages for this arch are fetched from npm if not already present.
+ // Set via TARGET_ARCH env var (e.g., TARGET_ARCH=x64).
+ const TARGET_ARCH = process.env.TARGET_ARCH || process.arch;
++
++// Bun on Windows materializes workspace deps as directory junctions, and
++// Bun's rmSync() throws EFAULT on junctions. rmdirSync removes the link
++// itself (never following it), so fall back to it.
++function removeLinkSync(linkPath: string): void {
++	try {
++		rmSync(linkPath);
++	} catch {
++		rmdirSync(linkPath);
++	}
++}
+ const TARGET_PLATFORM = process.env.TARGET_PLATFORM || process.platform;
+ 
+ function getWorkspaceRootNodeModulesDir(nodeModulesDir: string): string {
+@@ -98,7 +110,7 @@ function copyModuleIfSymlink(
+ 		console.log(`    Real path: ${realPath}`);
+ 
+ 		// Remove the symlink
+-		rmSync(modulePath);
++		removeLinkSync(modulePath);
+ 
+ 		// Copy the actual files
+ 		cpSync(realPath, modulePath, { recursive: true });
+@@ -203,7 +215,7 @@ function copyDependencyForPackage(
+ 		const nestedStats = lstatSync(nestedDependencyPath);
+ 		if (nestedStats.isSymbolicLink()) {
+ 			const realPath = realpathSync(nestedDependencyPath);
+-			rmSync(nestedDependencyPath);
++			removeLinkSync(nestedDependencyPath);
+ 			cpSync(realPath, nestedDependencyPath, {
+ 				recursive: true,
+ 			});
