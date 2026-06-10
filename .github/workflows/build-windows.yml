@@ -185,10 +185,12 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           OUR_TAG="${{ steps.version.outputs.our_tag }}"
+          # Manifest version must include the rebuild suffix or scoop sees no update
+          MANIFEST_VERSION="${OUR_TAG#v}"
           ZIP="Superset-${VERSION}-win-x64.zip"
           HASH=$(grep "$ZIP" upstream/apps/desktop/release/SHA256SUMS | cut -d' ' -f1)
           URL="https://github.com/${{ github.repository }}/releases/download/${OUR_TAG}/${ZIP}"
-          jq --arg v "$VERSION" --arg url "$URL" --arg hash "$HASH" \
+          jq --arg v "$MANIFEST_VERSION" --arg url "$URL" --arg hash "$HASH" \
             '.version = $v | .url = $url | .hash = $hash' \
             bucket/superset.json > bucket/superset.json.tmp
           mv bucket/superset.json.tmp bucket/superset.json
