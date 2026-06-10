@@ -1,0 +1,8 @@
+# Local reference copies of upstream files (not part of the builder)
+.upstream-ref/
+
+# Local upstream checkouts / build output
+upstream/
+release/
+
+node_modules/

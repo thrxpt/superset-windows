@@ -1,0 +1,64 @@
+name: Check Upstream
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  check:
+    name: Compare upstream vs our latest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Find latest upstream desktop release
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(gh api repos/superset-sh/superset/releases --paginate \
+            --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith("desktop-v")) and (.tag_name | contains("canary") | not))][0].tag_name')
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "::error::Could not find a stable upstream desktop-v* release"
+            exit 1
+          fi
+          echo "Latest upstream: $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#desktop-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Find our latest release
+        id: ours
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OURS=$(gh release list --repo "${{ github.repository }}" --limit 1 \
+            --json tagName --jq '.[0].tagName // "v0.0.0"')
+          # Strip leading v and any rebuild suffix (-2) for comparison
+          VERSION="${OURS#v}"
+          VERSION="${VERSION%%-*}"
+          echo "Latest ours: $OURS (base version $VERSION)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch build if upstream is newer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          UP="${{ steps.upstream.outputs.version }}"
+          OURS="${{ steps.ours.outputs.version }}"
+          if [ "$UP" = "$OURS" ]; then
+            echo "Up to date ($UP)"
+            exit 0
+          fi
+          NEWEST=$(printf '%s\n%s\n' "$UP" "$OURS" | sort -V | tail -1)
+          if [ "$NEWEST" = "$OURS" ]; then
+            echo "Ours ($OURS) is ahead of upstream ($UP) — nothing to do"
+            exit 0
+          fi
+          echo "Upstream $UP is newer than ours $OURS — dispatching build"
+          gh workflow run build-windows.yml \
+            --repo "${{ github.repository }}" \
+            -f upstream_tag="${{ steps.upstream.outputs.tag }}"

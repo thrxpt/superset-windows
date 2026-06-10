@@ -1,0 +1,186 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: "Upstream release tag (e.g. desktop-v1.12.5)"
+        required: true
+        type: string
+      release_suffix:
+        description: "Optional rebuild suffix appended to our tag (e.g. -2)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ inputs.upstream_tag }}${{ inputs.release_suffix }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build - Windows (x64)
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout builder repo
+        uses: actions/checkout@v4
+
+      - name: Derive version
+        id: version
+        shell: bash
+        run: |
+          TAG="${{ inputs.upstream_tag }}"
+          VERSION="${TAG#desktop-v}"
+          if [ "$VERSION" = "$TAG" ]; then
+            echo "::error::upstream_tag must look like desktop-vX.Y.Z, got: $TAG"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "our_tag=v${VERSION}${{ inputs.release_suffix }}" >> "$GITHUB_OUTPUT"
+
+      - name: Clone upstream at tag
+        shell: bash
+        run: git clone --depth 1 --branch "${{ inputs.upstream_tag }}" https://github.com/superset-sh/superset upstream
+
+      - name: Apply patches
+        shell: bash
+        run: |
+          shopt -s nullglob
+          cd upstream
+          for p in ../patches/*.patch; do
+            echo "Applying $p"
+            git apply --check "$p" || {
+              echo "::error::Patch $p no longer applies to ${{ inputs.upstream_tag }} — upstream drifted, update the patch."
+              exit 1
+            }
+            git apply "$p"
+          done
+
+      - name: Copy Windows overlay config
+        shell: bash
+        run: cp overlay/electron-builder.win.ts upstream/apps/desktop/electron-builder.win.ts
+
+      - name: Setup Bun
+        id: setup-bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: upstream/.bun-version
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ inputs.upstream_tag }}
+          restore-keys: |
+            ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-
+
+      - name: Install dependencies
+        working-directory: upstream
+        run: bun install --frozen --ignore-scripts
+
+      - name: Install desktop native dependencies
+        working-directory: upstream/apps/desktop
+        run: bun run install:deps
+
+      - name: Clean dev folder
+        working-directory: upstream/apps/desktop
+        run: bun run clean:dev
+
+      - name: Generate file icons
+        working-directory: upstream/apps/desktop
+        run: bun run generate:icons
+
+      - name: Compile app with electron-vite
+        working-directory: upstream/apps/desktop
+        env:
+          SUPERSET_WORKSPACE_NAME: superset
+          TARGET_ARCH: x64
+        run: bun run compile:app
+
+      - name: Copy native modules + validate runtime
+        working-directory: upstream/apps/desktop
+        run: |
+          bun run copy:native-modules
+          bun run validate:native-runtime
+
+      - name: Build Electron app
+        working-directory: upstream/apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          TARGET_ARCH: x64
+        run: bun run package -- --publish never --config electron-builder.win.ts --win --x64
+
+      - name: Verify packaged output
+        working-directory: upstream/apps/desktop
+        shell: bash
+        run: |
+          ls -la release
+          test -n "$(ls -1 release/*.zip 2>/dev/null)" || { echo "::error::No zip artifact in release/"; exit 1; }
+          test -n "$(ls -1 release/*.exe 2>/dev/null)" || { echo "::error::No NSIS installer in release/"; exit 1; }
+          test -f release/latest.yml || { echo "::error::No latest.yml auto-update manifest in release/"; exit 1; }
+
+          UNPACKED="release/win-unpacked/resources/app.asar.unpacked/node_modules"
+          for mod in node-pty better-sqlite3; do
+            if ! find "$UNPACKED/$mod" -name "*.node" | grep -q .; then
+              echo "::error::No native .node binding found for $mod in packaged app"
+              exit 1
+            fi
+          done
+
+          CLI_BIN="release/win-unpacked/resources/resources/bin/superset.exe"
+          test -f "$CLI_BIN" || { echo "::error::Bundled Superset CLI missing at $CLI_BIN"; exit 1; }
+          "$CLI_BIN" --version
+
+      - name: Smoke test packaged app
+        shell: pwsh
+        run: ./scripts/smoke-test.ps1 -ExePath "upstream/apps/desktop/release/win-unpacked/Superset.exe"
+
+      - name: Generate checksums
+        working-directory: upstream/apps/desktop/release
+        shell: bash
+        run: sha256sum *.zip *.exe > SHA256SUMS
+
+      - name: Create release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          OUR_TAG="${{ steps.version.outputs.our_tag }}"
+          cd upstream/apps/desktop/release
+          gh release create "$OUR_TAG" \
+            --repo "${{ github.repository }}" \
+            --title "Superset $VERSION for Windows (unofficial)" \
+            --notes "Unofficial Windows x64 build of [Superset ${{ inputs.upstream_tag }}](https://github.com/superset-sh/superset/releases/tag/${{ inputs.upstream_tag }}). Unsigned — install via scoop or click through SmartScreen.
+
+          \`\`\`
+          scoop bucket add superset https://github.com/${{ github.repository }}
+          scoop install superset
+          \`\`\`" \
+            *.zip *.exe latest.yml SHA256SUMS
+
+      - name: Bump scoop manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          OUR_TAG="${{ steps.version.outputs.our_tag }}"
+          ZIP="Superset-${VERSION}-win-x64.zip"
+          HASH=$(grep "$ZIP" upstream/apps/desktop/release/SHA256SUMS | cut -d' ' -f1)
+          URL="https://github.com/${{ github.repository }}/releases/download/${OUR_TAG}/${ZIP}"
+          jq --arg v "$VERSION" --arg url "$URL" --arg hash "$HASH" \
+            '.version = $v | .url = $url | .hash = $hash' \
+            bucket/superset.json > bucket/superset.json.tmp
+          mv bucket/superset.json.tmp bucket/superset.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bucket/superset.json
+          git commit -m "bucket: superset ${OUR_TAG}"
+          git pull --rebase origin main
+          git push origin HEAD:main
