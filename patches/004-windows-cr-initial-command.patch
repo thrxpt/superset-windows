@@ -1,0 +1,17 @@
+diff --git a/packages/host-service/src/terminal/terminal.ts b/packages/host-service/src/terminal/terminal.ts
+index b4470b4..0c1b3ed 100644
+--- a/packages/host-service/src/terminal/terminal.ts
++++ b/packages/host-service/src/terminal/terminal.ts
+@@ -586,9 +586,9 @@ function queueInitialCommand(
+ ): void {
+ 	if (session.initialCommandQueued || session.exited) return;
+ 	session.initialCommandQueued = true;
+-	const cmd = initialCommand.endsWith("\n")
+-		? initialCommand
+-		: `${initialCommand}\n`;
++	// Enter is CR on Windows ConPTY (LF is not interpreted as "execute").
++	const newline = process.platform === "win32" ? "\r" : "\n";
++	const cmd = `${initialCommand.replace(/\r?\n$/, "")}${newline}`;
+ 	// Don't gate on OSC 133;A: PTY stdin buffers until the shell reads it,
+ 	// and gating turned broken/missing markers into a guaranteed stall.
+ 	session.pty.write(cmd);
