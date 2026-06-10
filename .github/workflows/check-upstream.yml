@@ -20,7 +20,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG=$(gh api repos/superset-sh/superset/releases --paginate \
+          # No --paginate: with --jq it emits one result PER PAGE. The latest
+          # stable is always within the first page of 100.
+          TAG=$(gh api "repos/superset-sh/superset/releases?per_page=100" \
             --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith("desktop-v")) and (.tag_name | contains("canary") | not))][0].tag_name')
           if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
             echo "::error::Could not find a stable upstream desktop-v* release"
