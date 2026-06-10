@@ -28,6 +28,12 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 90
 
+    env:
+      # Electron 40's V8 headers trip MSVC C4996 (deprecation) which native
+      # module gyp configs escalate to an error. MSVC prepends $CL to every
+      # compile, so this silences it for all node-gyp rebuilds in the job.
+      CL: /wd4996
+
     steps:
       - name: Checkout builder repo
         uses: actions/checkout@v4
