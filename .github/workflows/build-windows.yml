@@ -29,10 +29,11 @@ jobs:
     timeout-minutes: 90
 
     env:
-      # Electron 40's V8 headers trip MSVC C4996 (deprecation) which native
-      # module gyp configs escalate to an error. MSVC prepends $CL to every
-      # compile, so this silences it for all node-gyp rebuilds in the job.
-      CL: /wd4996
+      # Electron 40's V8 headers trip MSVC C4996 (deprecation) which the gyp
+      # toolchain escalates to an error. _CL_ is appended AFTER the compiler
+      # command line (unlike CL, which is prepended and loses to later /we or
+      # /sdl flags), so /wd4996 wins for all node-gyp rebuilds in the job.
+      _CL_: /wd4996
 
     steps:
       - name: Checkout builder repo
