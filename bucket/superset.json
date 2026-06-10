@@ -4,8 +4,8 @@
   "homepage": "https://superset.sh",
   "license": "Elastic-2.0",
   "notes": "Unofficial build. Upstream (superset-sh/superset) does not yet ship Windows binaries.",
-  "url": "https://github.com/thrxpt/superset-windows/releases/download/v1.12.5/Superset-1.12.5-win-x64.zip",
-  "hash": "afe3916a2c60529e718a406a923f9037c3dc847ce1f0019024a3450df3317d7c",
+  "url": "https://github.com/thrxpt/superset-windows/releases/download/v1.12.5-2/Superset-1.12.5-win-x64.zip",
+  "hash": "cdc2e64fe4a038bbd96242356a65ea856abcc67fe824f353a5d2081b0b189311",
   "bin": [
     [
       "Superset.exe",
