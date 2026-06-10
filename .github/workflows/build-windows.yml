@@ -45,7 +45,10 @@ jobs:
 
       - name: Clone upstream at tag
         shell: bash
-        run: git clone --depth 1 --branch "${{ inputs.upstream_tag }}" https://github.com/superset-sh/superset upstream
+        run: |
+          # Upstream has paths beyond Windows' 260-char MAX_PATH
+          git config --global core.longpaths true
+          git clone --depth 1 --branch "${{ inputs.upstream_tag }}" https://github.com/superset-sh/superset upstream
 
       - name: Apply patches
         shell: bash
