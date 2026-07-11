@@ -1,11 +1,11 @@
 {
-  "version": "1.14.1",
+  "version": "1.14.3",
   "description": "Code editor for the AI agents era â€” run Claude Code, Codex, etc. in parallel (unofficial Windows build)",
   "homepage": "https://superset.sh",
   "license": "Elastic-2.0",
   "notes": "Unofficial build. Upstream (superset-sh/superset) does not yet ship Windows binaries.",
-  "url": "https://github.com/thrxpt/superset-windows/releases/download/v1.14.1/Superset-1.14.1-win-x64.zip",
-  "hash": "52b69ee1124249cb63eac091154132694396af62c77249ef23d34247ade3b27b",
+  "url": "https://github.com/thrxpt/superset-windows/releases/download/v1.14.3/Superset-1.14.3-win-x64.zip",
+  "hash": "58296e42e03beea8c1fd71f0014e5f76528ee249659a979d117ed7aefa85e463",
   "bin": [
     [
       "Superset.exe",
